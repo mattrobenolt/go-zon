@@ -43,4 +43,11 @@
 // tagged unions with payloads, [Encoder.CodePoint], and [Void] as a
 // marker. The [Value] types compose the same kinds, and [Encoder.Raw]
 // splices pre-encoded ZON.
+//
+// Reflection is layered on top: [Marshal], [MarshalWrite], and
+// [Encoder.WriteAny] walk Go values through the same primitives, so a
+// struct field of type [Enum], [Union], or [CodePoint] marshals as its ZON
+// kind. Struct fields take their name from a `zon:"name"` tag or convert
+// to snake_case, nil pointers and interfaces write null, and maps write
+// struct fields with the keys sorted.
 package zon

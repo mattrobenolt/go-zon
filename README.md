@@ -60,6 +60,22 @@ wrap one field per line; `Inline()` keeps one line and `Fields(n)` applies
 the standard rule (wrap when more than two fields). `Compact()` writes the
 minimal form.
 
+## Reflection
+
+`Marshal`, `MarshalWrite`, and `Encoder.WriteAny` walk Go values through the
+same primitives, so the two styles compose: stream the skeleton with the
+encoder, marshal one heavy field with reflection.
+
+- Struct fields: `zon:"name"` renames, `zon:"-"` skips, otherwise the Go name
+  converts to snake_case (`HTTPServer` → `http_server`); anonymous struct
+  fields flatten
+- Nil pointers and interfaces write `null`; maps write struct fields with
+  the keys sorted; `[]byte` writes a string literal
+- `zon.Enum`, `zon.Union`, `zon.CodePoint`, `zon.Multiline`, `zon.Raw`, and
+  `math/big.Int` fields marshal as their ZON kinds
+- `chan`, `func`, `complex`, recursive types, and `math/big.Float` return an
+  error
+
 ## Why no decoder
 
 ZON is untyped: the consumer's type decides what a literal means. `std.zon.parse`

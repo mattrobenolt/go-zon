@@ -18,6 +18,40 @@ import (
 // copied next to the generated .zon files: @embedFile resolves relative to
 // the importing file's directory, so it cannot stay in the repository root.
 
+type marshalDep struct {
+	URL  string `zon:"url"`
+	Hash string `zon:"hash"`
+}
+
+type MarshalEmbedded struct {
+	Inner string `zon:"embedded_inner"`
+}
+
+// marshalDoc mirrors the Marshal struct in check.zig field for field.
+type marshalDoc struct {
+	Name    string                 `zon:"name"`
+	Version string                 `zon:"version"`
+	Mode    zon.Enum               `zon:"mode"`
+	While   int                    `zon:"while"`
+	UserID  int                    // no tag: snake_case conversion
+	Opt     *uint32                `zon:"opt"`
+	OptNull *uint32                `zon:"optnull"`
+	Count   int64                  `zon:"count"`
+	Ratio   float64                `zon:"ratio"`
+	Flag    bool                   `zon:"flag"`
+	Big     *big.Int               `zon:"big"`
+	Tags    []string               `zon:"tags"`
+	Matrix  [2][2]int32            `zon:"matrix"`
+	Deps    map[string]*marshalDep `zon:"deps"`
+	Retry   zon.Union              `zon:"retry"`
+	Err     zon.Union              `zon:"err"`
+	Content zon.Multiline          `zon:"content"`
+	CP      zon.CodePoint          `zon:"cp"`
+	Skip    string                 `zon:"-"`
+	hidden  string
+	MarshalEmbedded
+}
+
 // TestZigParse round-trips encoder output through the Zig 0.16 standard
 // library: it generates ZON with this package, parses it with
 // std.zon.parse.fromSliceAlloc and comptime @import, and asserts the values.
@@ -213,11 +247,41 @@ func TestZigParse(t *testing.T) {
 		}
 		return e.EndStruct()
 	}
+
+	// marshalDoc mirrors the Marshal struct in check.zig field for field.
+	opt := uint32(7)
+	doc := marshalDoc{
+		Name:    "example",
+		Version: "0.1.0",
+		Mode:    zon.Enum("debug"),
+		While:   5,
+		UserID:  42, // no tag: snake_case conversion, "user_id"
+		Opt:     &opt,
+		Count:   1000000007,
+		Ratio:   0.1,
+		Flag:    true,
+		Big:     new(big.Int).Lsh(big.NewInt(1), 100),
+		Tags:    []string{"a", "b", "c"},
+		Matrix:  [2][2]int32{{1, 2}, {3, 4}},
+		Deps: map[string]*marshalDep{
+			"beta":  {URL: "https://u2", Hash: "h2"},
+			"alpha": {URL: "https://u1", Hash: "h1"},
+		},
+		Retry:           zon.Union{Tag: "backoff", Value: zon.Void{}},
+		Err:             zon.Union{Tag: "io", Value: zon.String("EOF")},
+		Content:         zon.Multiline("first\nsecond"),
+		CP:              zon.CodePoint('⚡'),
+		hidden:          "x",
+		MarshalEmbedded: MarshalEmbedded{Inner: "deep"},
+	}
 	docs := map[string]struct {
 		opts []zon.Option
 		fn   func(*zon.Encoder) error
 	}{
 		"sink.zon": {fn: sink},
+		"marshal.zon": {fn: func(e *zon.Encoder) error {
+			return e.WriteAny(doc)
+		}},
 		"big.zon": {fn: func(e *zon.Encoder) error {
 			if err := e.BeginStruct(); err != nil {
 				return err

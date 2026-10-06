@@ -20,6 +20,8 @@ linters:
     - errcheck
 
   settings:
+    exhaustive:
+      default-signifies-exhaustive: true
     goconst:
       ignore-tests: true
     staticcheck:
