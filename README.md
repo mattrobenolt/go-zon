@@ -5,6 +5,12 @@
 Go encoder for [ZON](https://ziglang.org/documentation/0.16.0/std/#std.zon), the Zig
 Object Notation, matching the Zig 0.16 standard library.
 
+## Installation
+
+```
+go get go.withmatt.com/zon
+```
+
 ## Usage
 
 ```go
