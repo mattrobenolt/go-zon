@@ -47,7 +47,9 @@
 // Reflection is layered on top: [Marshal], [MarshalWrite], and
 // [Encoder.WriteAny] walk Go values through the same primitives, so a
 // struct field of type [Enum], [Union], or [CodePoint] marshals as its ZON
-// kind. Struct fields take their name from a `zon:"name"` tag or convert
-// to snake_case, nil pointers and interfaces write null, and maps write
-// struct fields with the keys sorted.
+// kind. Struct fields take their name from the first comma-separated
+// component of a `zon:"name,omitempty"` tag or convert to snake_case, nil
+// pointers and interfaces write null, and maps write struct fields with the
+// keys sorted. The "omitempty" option skips fields holding the zero value
+// of their type, so an absent field means the consumer's default.
 package zon

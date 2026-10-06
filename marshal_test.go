@@ -173,6 +173,63 @@ func TestMarshal(t *testing.T) {
 	}
 }
 
+func TestMarshalOmitEmpty(t *testing.T) {
+	type config struct {
+		Name  string           `zon:"name,omitempty"`
+		Set   string           `zon:"set,omitempty"`
+		Count int              `zon:"count,omitempty"`
+		Flag  bool             `zon:"flag,omitempty"`
+		Ptr   *int32           `zon:"ptr,omitempty"`
+		Any   any              `zon:"any,omitempty"`
+		List  []int32          `zon:"list,omitempty"`
+		Deps  map[string]int32 `zon:"deps,omitempty"`
+		Mode  zon.Enum         `zon:"mode,omitempty"`
+		Retry zon.Union        `zon:"retry,omitempty"`
+		Body  zon.Raw          `zon:"body,omitempty"`
+		Plain string           `zon:"plain"`
+	}
+	seven := int32(7)
+
+	// Zero values drop; only the untagged-for-omission field remains,
+	// written inline because one field was written.
+	got := marshal(t, config{Plain: "p"})
+	if want := `.{ .plain = "p" }`; got != want {
+		t.Errorf("zero: got %q, want %q", got, want)
+	}
+
+	// Set values all write, so the count decides the wrap rule.
+	got = marshal(t, config{
+		Name:  "n",
+		Set:   "s",
+		Count: 5,
+		Flag:  true,
+		Ptr:   &seven,
+		Any:   "hi",
+		List:  []int32{1},
+		Deps:  map[string]int32{"a": 1},
+		Mode:  zon.Enum("debug"),
+		Retry: zon.Union{Tag: "backoff", Value: zon.Void{}},
+		Body:  zon.Raw("42"),
+	})
+	want := ".{\n    .name = \"n\",\n    .set = \"s\",\n    .count = 5,\n    .flag = true,\n" +
+		"    .ptr = 7,\n    .any = \"hi\",\n    .list = .{1},\n    .deps = .{ .a = 1 },\n" +
+		"    .mode = .debug,\n    .retry = .backoff,\n    .body = 42,\n    .plain = \"\",\n}"
+	if got != want {
+		t.Errorf("set: got:\n%s\nwant:\n%s", got, want)
+	}
+
+	// A tag with options but no name: snake_case plus omission.
+	type noName struct {
+		Empty string `zon:",omitempty"`
+	}
+	if got, want := marshal(t, noName{}), `.{}`; got != want {
+		t.Errorf("empty: got %q, want %q", got, want)
+	}
+	if got, want := marshal(t, noName{Empty: "x"}), `.{ .empty = "x" }`; got != want {
+		t.Errorf("set: got %q, want %q", got, want)
+	}
+}
+
 func TestMarshalBytes(t *testing.T) {
 	got, err := zon.Marshal(map[string]int{"one": 1})
 	if err != nil {
@@ -241,6 +298,16 @@ func TestMarshalErrors(t *testing.T) {
 			v:      cyclicValue(),
 			reason: "marshal depth exceeded 1024 levels; recursive types are not supported",
 		},
+		{
+			name:   "unknown tag option",
+			v:      optErrStruct{},
+			reason: `unknown option "bogus" in zon tag on field F of type zon_test.optErrStruct`,
+		},
+		{
+			name:   "unknown tag option in embedded struct",
+			v:      optErrOuter{},
+			reason: `unknown option "bogus" in zon tag on field Bad of type zon_test.OptErrEmbedded`,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -257,6 +324,18 @@ func TestMarshalErrors(t *testing.T) {
 			}
 		})
 	}
+}
+
+type optErrStruct struct {
+	F int `zon:"x,bogus"`
+}
+
+type OptErrEmbedded struct {
+	Bad int `zon:"x,bogus"`
+}
+
+type optErrOuter struct {
+	OptErrEmbedded
 }
 
 type node struct {

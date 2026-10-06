@@ -30,6 +30,8 @@ const Marshal = struct {
     content: []const u8,
     cp: u21,
     embedded_inner: []const u8,
+    proxy_v2: bool = true,
+    cert_path: []const u8 = "default.pem",
 };
 
 const Sink = struct {
@@ -91,9 +93,12 @@ test "sink round-trips through std.zon.parse" {
 
 test "marshal round-trips through std.zon.parse" {
     @setEvalBranchQuota(100000);
+    // An arena, not testing.allocator + free: fields filled from Zig defaults
+    // (cert_path) point at static memory, which std.zon.parse.free cannot free.
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
     const src: [:0]const u8 = @embedFile("marshal.zon");
-    const v = try std.zon.parse.fromSliceAlloc(Marshal, std.testing.allocator, src, null, .{});
-    defer std.zon.parse.free(std.testing.allocator, v);
+    const v = try std.zon.parse.fromSliceAlloc(Marshal, arena.allocator(), src, null, .{});
 
     try std.testing.expectEqualStrings("example", v.name);
     try std.testing.expectEqualStrings("0.1.0", v.version);
@@ -117,6 +122,8 @@ test "marshal round-trips through std.zon.parse" {
     try std.testing.expectEqualStrings("first\nsecond", v.content);
     try std.testing.expectEqual(@as(u21, 0x26a1), v.cp);
     try std.testing.expectEqualStrings("deep", v.embedded_inner);
+    try std.testing.expect(v.proxy_v2); // present: omitempty kept true
+    try std.testing.expectEqualStrings("default.pem", v.cert_path); // omitted: default filled
 }
 
 comptime {

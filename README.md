@@ -72,9 +72,13 @@ minimal form.
 same primitives, so the two styles compose: stream the skeleton with the
 encoder, marshal one heavy field with reflection.
 
-- Struct fields: `zon:"name"` renames, `zon:"-"` skips, otherwise the Go name
+- Struct fields: the first comma-separated component of the tag names
+  (`zon:"metrics_listen,omitempty"`), `zon:"-"` skips, otherwise the Go name
   converts to snake_case (`HTTPServer` → `http_server`); anonymous struct
   fields flatten
+- The `omitempty` option skips fields holding the zero value of their type,
+  so an absent field means the consumer's default — `std.zon.parse` fills
+  missing fields from the Zig struct's `= default` declarations
 - Nil pointers and interfaces write `null`; maps write struct fields with
   the keys sorted; `[]byte` writes a string literal
 - `zon.Enum`, `zon.Union`, `zon.CodePoint`, `zon.Multiline`, `zon.Raw`, and

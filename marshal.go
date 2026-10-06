@@ -2,6 +2,7 @@ package zon
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"math/big"
 	"reflect"
@@ -54,10 +55,12 @@ func MarshalWrite(w io.Writer, v any, opts ...Option) error {
 //   - slices and arrays write array literals; a []byte writes a string literal
 //
 // Struct fields resolve in declaration order: unexported fields are skipped,
-// a "zon:\"-\"" tag skips the field, a "zon:\"name\"" tag sets the field name,
-// and otherwise the Go name converts to snake_case ("HTTPServer" becomes
-// "http_server"). Anonymous struct fields, tagged or not, are flattened into
-// the parent like the encoding/json packages do.
+// a "zon:\"-\"" tag skips the field, and otherwise the first comma-separated
+// tag component sets the field name ("zon:\"name,omitempty\"") with the rest
+// as options, falling back to the snake_case Go name. "omitempty" skips
+// fields holding the zero value of their type, so an absent field means the
+// consumer's default. Anonymous struct fields, tagged or not, are flattened
+// into the parent like the encoding/json packages do.
 //
 // Recursive types, chan, func, complex, and math/big.Float values are
 // unsupported and return an error.
@@ -160,70 +163,123 @@ func (e *Encoder) writeMap(v reflect.Value, depth int) error {
 }
 
 func (e *Encoder) writeGoStruct(v reflect.Value, depth int) error {
-	fields := marshalFields(v.Type())
-	if err := e.BeginStruct(Fields(len(fields))); err != nil {
+	mt := marshalTypeOf(v.Type())
+	if mt.err != nil {
+		return e.errorAt("WriteAny", mt.err.Error())
+	}
+	// Resolve the writable fields first: omitempty drops zero values, so the
+	// written count decides the wrap rule.
+	writable := make([]resolvedField, 0, len(mt.fields))
+	for _, f := range mt.fields {
+		fv := fieldByIndex(v, f.index)
+		if !fv.IsValid() || (f.omitEmpty && fv.IsZero()) {
+			continue
+		}
+		writable = append(writable, resolvedField{name: f.name, val: fv})
+	}
+	if err := e.BeginStruct(Fields(len(writable))); err != nil {
 		return err
 	}
-	for _, f := range fields {
-		fv := fieldByIndex(v, f.index)
-		if !fv.IsValid() {
-			continue // a nil anonymous pointer: nothing to flatten
-		}
-		if err := e.Name(f.name); err != nil {
+	for _, w := range writable {
+		if err := e.Name(w.name); err != nil {
 			return err
 		}
-		if err := e.writeAny(fv, depth+1); err != nil {
+		if err := e.writeAny(w.val, depth+1); err != nil {
 			return err
 		}
 	}
 	return e.EndStruct()
 }
 
+type resolvedField struct {
+	name string
+	val  reflect.Value
+}
+
 type marshalField struct {
-	name  string
-	index []int
+	name      string
+	index     []int
+	omitEmpty bool
+}
+
+// marshalType is the resolved fields of one struct type.
+type marshalType struct {
+	fields []*marshalField
+	err    error // invalid zon tag, discovered while resolving
 }
 
 // fieldCache caches resolved field lists per struct type.
-var fieldCache sync.Map // reflect.Type -> []*marshalField
+var fieldCache sync.Map // reflect.Type -> *marshalType
 
-func marshalFields(t reflect.Type) []*marshalField {
+func marshalTypeOf(t reflect.Type) *marshalType {
 	if cached, ok := fieldCache.Load(t); ok {
-		return cached.([]*marshalField)
+		return cached.(*marshalType)
 	}
-	fields := structFields(t, nil)
-	fieldCache.Store(t, fields)
-	return fields
+	mt := new(marshalType)
+	mt.fields, mt.err = structFields(t, nil)
+	fieldCache.Store(t, mt)
+	return mt
 }
 
 // structFields resolves the ZON fields of a struct: exported fields in
 // declaration order, anonymous structs flattened, names from the zon tag or
-// snake_case conversion.
-func structFields(t reflect.Type, prefix []int) []*marshalField {
+// snake_case conversion. The first comma-separated tag component names the
+// field; the rest are options: "omitempty" skips zero values.
+func structFields(t reflect.Type, prefix []int) ([]*marshalField, error) {
 	var fields []*marshalField
 	for i := 0; i < t.NumField(); i++ {
 		f := t.Field(i)
 		if f.PkgPath != "" {
 			continue // unexported
 		}
-		name, _ := f.Tag.Lookup("zon")
+		name, opts := cutOptions(f.Tag.Get("zon"))
 		if name == "-" {
 			continue
+		}
+		omitEmpty := false
+		for _, opt := range opts {
+			switch opt {
+			case "omitempty":
+				omitEmpty = true
+			case "":
+				// tolerate empty components, like a trailing comma
+			default:
+				return nil, fmt.Errorf("unknown option %q in zon tag on field %s of type %s",
+					opt, f.Name, t.String())
+			}
 		}
 		ft := f.Type
 		if ft.Kind() == reflect.Pointer {
 			ft = ft.Elem()
 		}
 		if f.Anonymous && ft.Kind() == reflect.Struct && name == "" {
-			fields = append(fields, structFields(ft, appendIndex(prefix, f.Index))...)
+			embedded, err := structFields(ft, appendIndex(prefix, f.Index))
+			if err != nil {
+				return nil, err
+			}
+			fields = append(fields, embedded...)
 			continue
 		}
 		if name == "" {
 			name = snakeCase(f.Name)
 		}
-		fields = append(fields, &marshalField{name: name, index: appendIndex(prefix, f.Index)})
+		fields = append(fields, &marshalField{
+			name:      name,
+			index:     appendIndex(prefix, f.Index),
+			omitEmpty: omitEmpty,
+		})
 	}
-	return fields
+	return fields, nil
+}
+
+// cutOptions splits a zon tag into its name component and option components:
+// "metrics_listen,omitempty" is the name "metrics_listen" with one option.
+func cutOptions(tag string) (name string, opts []string) {
+	name, rest, _ := strings.Cut(tag, ",")
+	if rest == "" {
+		return name, nil
+	}
+	return name, strings.Split(rest, ",")
 }
 
 // fieldByIndex walks to a field, dereferencing pointers on the way. It
