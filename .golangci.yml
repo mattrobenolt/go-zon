@@ -1,0 +1,45 @@
+version: '2'
+
+linters:
+  enable:
+    - exhaustive
+    - goconst
+    - gocritic
+    - gosec
+    - grouper
+    - inamedparam
+    - makezero
+    - noctx
+    - perfsprint
+    - thelper
+    - unconvert
+    - unparam
+    - unused
+    - usestdlibvars
+  disable:
+    - errcheck
+
+  settings:
+    goconst:
+      ignore-tests: true
+    staticcheck:
+      checks:
+        - all
+    gosec:
+      excludes:
+        - G104
+        - G115
+        - G204
+        - G304
+        - G602
+        - G703
+
+formatters:
+  enable:
+    - gofumpt
+    - golines
+
+  settings:
+    golines:
+      max-len: 100
+      chain-split-dots: false

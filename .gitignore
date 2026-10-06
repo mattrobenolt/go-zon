@@ -1,0 +1,10 @@
+.direnv/
+.envrc.local
+
+# zig local caches, if zig is run from the repository root
+.zig-cache/
+zig-out/
+
+# go test artifacts
+*.test
+coverage.out
