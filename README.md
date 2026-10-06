@@ -90,9 +90,12 @@ encoder, marshal one heavy field with reflection.
 
 ZON is untyped: the consumer's type decides what a literal means. `std.zon.parse`
 is type-directed — `.foo` resolves as an enum member, a void-payload union tag,
-or a struct field only because the target Zig type says so. A Go decoder would
-have to invent that target-type model. Decode stays out of scope until that
-design problem is solved; `Raw` splices pre-encoded ZON in the meantime.
+or a struct field only because the target Zig type says so. A Go decoder could
+mirror the mapping this package uses for marshaling, but the consumer of ZON
+is Zig by construction: tooling close enough to read ZON is close enough to be
+written in Zig, where `std.zon.parse` is the reference parser. Emitting ZON has
+users in any language; reading it back has users in Zig only. `Raw` splices
+pre-encoded ZON in the meantime.
 
 ## Verification
 
